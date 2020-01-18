@@ -1,0 +1,11 @@
+library(rpart)
+df<-data.frame(x=c(1,2,3,3,3),y=factor(c("a","a","b","a","b")),z=c(5,4,4,2,5))
+mytree<-rpart(y~x+z ,data=df,minbucket=1,minsplit=1)
+summary(mytree)
+printcp(mytree)
+plot(mytree)
+text(mytree,use.n=TRUE)
+opt<-which.min(mytree$cptable[,"xerror"])
+cp<-mytree$cptable[opt,"CP"]
+prune<-prune(mytree,cp=cp)
+print(prune) 

@@ -1,0 +1,311 @@
+%\documentclass{article}
+\documentclass{llncs}
+
+\usepackage{graphicx}
+\usepackage{Sweave}
+
+\usepackage{amssymb}
+\setcounter{tocdepth}{3}
+%\usepackage[spanish]{babel}
+%\usepackage[latin1]{inputenc}
+\usepackage[T1]{fontenc}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\mainmatter  
+
+\title{Prácticas de Sistemas Neuronales en Biomedicina}
+
+\titlerunning{Sistemas neuronales y neurodifusos}
+
+\author{Gracian Triviño Salas\inst{1} }
+
+\authorrunning{Gracian Triviño Salas} 
+
+\institute{Universidad de Málaga, Departamento de Lenguajes y Ciencias de la Computacion, ETSI  Informática, España}
+
+\maketitle
+
+%\begin{document}
+
+
+\section{Introducción} 
+En la actualidad la rama de la Inteligencia Artificial denominada Inteligencia Computacional ofrece un conjunto de  metodos computacioanales que permiten clasificar datos estadisticos y descubrir conocimiento embebido en los mismos. Su facilidad de uso y la disponibilidad de los mismos los hacen apropiados para ser usados en diferentes campos como la Medicina clinica. Cuyo interes es clasificar a nuevos pacientes y predecir la evolucion de la enfermedad en funcion de informacion de pacientes anteriores.
+En este documento se realiza un estudio sobre la capacidad de prediccion de los diferentes métodos computacionales a partir de un conjunto de datos reales sobre diferentes pacientes y la conveniencia o no de darles quimioterapia en función de unos parámetros conocidos del paciente y del tumor. Estos datos se encuentran en un archivo, el cual se carga al entorno R con la siguiente función:
+<<>>=
+datos <- read.table("datos_icb.txt",header=T)
+@
+Los clasificadores mencionados son:
+\begin{itemize}
+     \item Clasificador numero 1: Redes neuronales.
+     \item Clasificador numero 2: Arboles de decisión.
+     \item Clasificador numero 3: Máquinas de soporte vectorial.
+     \item Clasificador numero 4: Regresión logística.
+\end{itemize}
+Para comparar las predicciones se separan el conjunto de datos en dos subcojuntos: el conjunto de datos de entranamiento y el conjunto de datos de test. El primer conjunto se emplea para realizar el entrenamiento y el segundo para comprobar la prediccion con cada uno de lo clasificadores.
+Los clasificadores necesitan parametrizarse. Por ejemplo, los parametros de las redes neuronales son decay, el maximo numero de iteracciones (maxit) y el numero de neuronas en la capa oculta (size). Para simplificar en la eleccion de la red adecuada, nos fijamos solo en el numero de neuronas.
+Una vez encontrados los parametros de los diferentes clasificadores se realiza la prediccion. Por ultimo, se comprueba la eficiencia de la prediccion y se comentan los resultados.
+Para poder usar las diferentes funciones de R y  realizar las operaciones sobre los datos se cargan las diferentes librerías en R.
+<<>>=
+library(stats)
+library(pROC)
+library(nnet)
+library(e1071)
+library(rpart)
+@
+\section{Eleccion de los parametros}
+Una forma de elegir los parametros es dividir el conjunto entrenaminento en dos conjuntos; con los datos de entrenaminento se entrena al clasificador con unos parametros concretos, por ejemplo, en la red neuronal se configura con el diferentes numeros de neuronas en la capa oculta. Cada una de estas configuraciones se  entrena  una serie de veces y nos quedamos con la mejor de las prediccion que se corresponde con un parametro concreto de inicializacion de la red neuronal. La operacion descrita se realiza en varias ocasiones con diferentes parametros hasta encontrar el numero de neuronas de la capa oculta que mejor predice los datos de test. El codigo R se muestra a continuacion:
+<<results=hide>>=
+#Encontrar el numero optimo de neuronas en la capa oculta para MLP
+set.seed(1000)
+acc <- sample(10,10)
+contador <- sample(10,10)
+k <-10
+for(j in 1:k) {
+    contador[j]=0
+}
+it1<-10
+for(i in 1:it1) {
+    ind <- sample(500,500)
+    for(i in 1:k) {
+    idt <- ind[1:50]
+    dtrain <- datos[-idt,]
+    dtest <- datos[idt,]
+    nn.fit <- nnet(recid~., data=dtrain, size=i, maxit=100, decay=5e-4);
+    lr.pred <- predict(nn.fit,dtest,type="raw");
+    acc[i]<-auc((dtest$recid=="SI")*1,lr.pred);
+    obj.roc<-roc((dtest$recid=="SI")*1,lr.pred);
+    }
+    max<-max(acc);
+    print(max)
+    for(i in 1:k) {
+          if (acc[i]==max){
+            print(i);
+            contador[i]= contador[i]+1
+          } 
+    }
+   
+}
+maxAUC<-max(acc);
+print(maxAUC)
+neurona<-max(contador);
+print(neurona)
+@
+La mejor precicion obtenida en la ultima iteracion es: $\Sexpr{maxAUC}$ y el numero optimo de neuronas en la capa oculta es $\Sexpr{neurona}$ que sera el parametro que se usara en la comparativa de las predicciones.
+Del mismo modo se eliguen los parametros del resto de clasificadores (excepto, regresión logística que carece de parametros).
+\section{Metodos para comprobar la precision}
+Existen dos formas para comprobar la precision realizada: calculando la precision de la misma o mediante la curva ROC. 
+Separamos el conjunto de datos en 2 grupos con el mismo numero de elementos. El grupo de datos de entrenamiento es:
+<<>>=
+data.train<-datos[1:250,]
+@
+Y el grupo de datos de test que permtira determinar la eficiencia del algoritmo de clasificacion de datos es:
+<<>>=
+data.test<-datos[251:500,]
+@
+Se entrena el clasificador (en este caso se usa regresion lineal) con el conjunto de datos reservado a tal efecto:
+<<>>=
+lr.fit <- glm(recid ~.,data=data.train, family=binomial("logit"))
+@
+Se compara la prediccion realizada con los resultados del conjunto de datos de test:
+<<>>=
+lr.pred<-predict(lr.fit,data.test, type="response")
+@
+En el primero de los caso, se calcula la precisión  comprobando el acierto de la predicción de los resultados obtenidos. Es decir, se calculan los verdaderos positivos obtenidos y los verdaderos negativos y  el porcentaje de estos sobre el numero total de datos.
+<<>>=
+TP<-sum(((data.test$recid=="SI")*1.0)&(lr.pred>0.5)*1.0)
+TN<-sum(((data.test$recid=="NO")*1.0)&(lr.pred<=0.5)*1.0)
+ACC<-(TP+TN)/dim(data.test)[1]
+@
+La segunda forma es mediante la curva ROC que  son gráficos en los cuales se representa la sensibilidad en función de los falsos positivos (1-especificidad) de la prueba diagnóstica, donde cada punto de la curva representa un par Sensibilidad/(1-especificidad) correspondiente a un nivel de decisión determinado.
+La grafica ROC se calcula:
+<<results=hide>>=
+obj.roc <- roc(data.test$recid=='SI', lr.pred, smooth=FALSE, auc=TRUE)
+ROC<-auc(obj.roc)
+@
+
+\begin{figure}[h]
+\centering
+<<results=hide,echo=false,fig=true>>=
+plot(obj.roc)
+@
+\caption{Curva ROC.}\label{boxplot}
+\end{figure}
+En la figura \ref{boxplot} se puede observar la curva empleada para el calculo de la ROC.
+Los resultados obtenidos para el ejemplo  son:
+($Precisión=\Sexpr{ACC}$)
+($ROC=\Sexpr{round(ROC,3)}$)
+Usaremos la curva ROC para determinar la mejor prediccion de los clasificadores.
+\section{Prediccion de los diferentes clasificadores}
+En esta seccion vamos a calcular la curva ROC obtenida por cada uno de los clasificadores a partir de de los datos de entrada.
+Para el Percetron Multicapa con $\Sexpr{neurona}$ neuronas en la capa oculta:
+<<results=hide>>=
+# MLP
+ind <- sample(500,500)
+mejorClasificador<- sample(4,4)
+i <- 1
+j <- 1
+idt <- ind[1:50*i]
+dtrain <- datos[-idt,]
+dtest <- datos[idt,]
+nn.fit <- nnet(recid~., data=dtrain, size=neurona, maxit=1000, decay=5e-4)
+lr.pred <- predict(nn.fit,dtest,type="raw")
+ROC<-auc((dtest$recid=="SI")*1,lr.pred)
+obj.roc<-roc((dtest$recid=="SI")*1,lr.pred)
+mejorClasificador[j]<-ROC
+j<-j+1
+@
+\begin{figure}[h]
+\centering
+<<results=hide,echo=false,fig=true>>=
+plot(obj.roc)
+@
+\caption{Curva ROC para el Percetron Multicapa ($Precisión=\Sexpr{mejorClasificador[1]}$).}\label{boxplot}
+\end{figure}
+Para los arboles de decision:
+<<results=hide>>=
+# Arboles de decision DT
+ind <- sample(500,500)
+i <- 1
+idt <- ind[1:50*i]
+dtrain <- datos[-idt,]
+dtest <- datos[idt,]
+lr.fit <- rpart(recid~., data=dtrain)
+lr.pred <- predict(lr.fit,dtest,type="prob",control = rpart.control(cp = 0.05))
+ROC<-auc((dtest$recid=="SI")*1, lr.pred)
+obj.roc<-roc((dtest$recid=="SI")*1,lr.pred)
+mejorClasificador[j]<-ROC
+j<-j+1
+@
+\begin{figure}[h]
+\centering
+<<results=hide,echo=false,fig=true>>=
+plot(obj.roc)
+@
+\caption{Curva ROC para los Arboles de decision  ($Precisión=\Sexpr{mejorClasificador[2]}$).}\label{boxplot}
+\end{figure}
+Para las Maquinas de Sopote Vectorial:
+<<results=hide>>=
+# SVM
+ind <- sample(500,500)
+i <- 1
+idt <- ind[1:50*i]
+dtrain <- datos[-idt,]
+dtest <- datos[idt,]
+lr.fit <- svm(recid~., data=dtrain, cost=1000, gamma=1, probability=TRUE)
+pred <- predict(lr.fit,dtest,probability=TRUE)
+lr.pred <- attr(pred, which="probabilities")[,"SI"]
+ROC<-auc((dtest$recid=="SI")*1, lr.pred)
+obj.roc<-roc((dtest$recid=="SI")*1,lr.pred)
+mejorClasificador[j]<-ROC
+j<-j+1
+@
+\begin{figure}[h]
+\centering
+<<results=hide,echo=false,fig=true>>=
+plot(obj.roc)
+@
+\caption{Curva ROC para las Maquinas de Sopote Vectorial ($Precisión=\Sexpr{mejorClasificador[3]}$).}\label{boxplot}
+\end{figure}
+Para Regresion Logistica el codigo R es:
+<<results=hide>>=
+#LR
+ind <- sample(500,500)
+i <- 1
+idt <- ind[1:50*i]
+dtrain <- datos[-idt,]
+dtest <- datos[idt,]
+lr.fit <- glm(recid~., data=dtrain, family=binomial("logit"))
+lr.pred <- predict(lr.fit,dtest,type="response")  
+ROC<-auc((dtest$recid=="SI")*1,lr.pred)
+obj.roc<-roc((dtest$recid=="SI")*1,lr.pred)
+mejorClasificador[j]<-ROC
+j<-j+1
+#Encontrar el mejor clasificador
+ bettercla<-max(mejorClasificador);
+ for(i in 1:4) {
+          if (mejorClasificador[i]==bettercla){           
+           clasificador=i
+          } 
+    }
+@
+\begin{figure}[h]
+\centering
+<<results=hide,echo=false,fig=true>>=
+plot(obj.roc)
+@
+\caption{Curva ROC para Regresion Logistica ($Precisión=\Sexpr{mejorClasificador[4]}$).}\label{boxplot}
+\end{figure}
+La mejor precision es $\Sexpr{bettercla}$ obtenida por el clasificador numero  $ \Sexpr{clasificador}$ que es el que usariamos para realizar las predicciones.
+\subsection{Validación cruzada}
+La validacion cruzada permite evaluar los resultados de un análisis estadístico con el objetico de garantizar la independencia entre datos de entrenamiento y prueba. Consiste en calcular, de forma repetida, la media aritmetica obtenida de las medidas de evaluacion sobre diferentes particiones. Parmite determinar cual es el mejor modelo  que sera el usado en la fase de prediicion de resultados.
+El codigo r para realizar la validacion cruzada con una división del conjunto de datos en 10 partes o lo que es lo mismo un 10 k-fold es:
+<<results=hide>>=
+#MLP
+k <-10
+acc <- sample(10,10)
+for(i in 1:k) {
+  acc[i]=0
+}
+for(i in 1:10) { 
+  ii <- 50*(i-1)+1
+  is <- 50*i
+  idt <- ind[ii:is]
+  dtrain <- datos[-idt,]
+  dtest <- datos[idt,]
+  nn.fit <- nnet(recid~., data=dtrain, size=neurona, maxit=1000, decay=5e-4)
+  lr.pred <- predict(nn.fit,dtest,type="raw")
+  acc[i]<-auc((dtest$recid=="SI")*1,lr.pred)
+}
+j<-1
+mejorClasificador[j]<- mean(acc)
+j<-j+1
+# Arboles de decision DT
+for(i in 1:10) { 
+  ii <- 50*(i-1)+1
+  is <- 50*i
+  idt <- ind[ii:is]
+  dtrain <- datos[-idt,]
+  dtest <- datos[idt,]
+  lr.fit <- rpart(recid~., data=dtrain)
+  lr.pred <- predict(lr.fit,dtest,type="prob",control = rpart.control(cp = 0.05))
+  acc[i]<-auc((dtest$recid=="SI")*1, lr.pred)
+}
+mejorClasificador[j]<- mean(acc)
+j<-j+1
+# SVM
+for(i in 1:10) { 
+  ii <- 50*(i-1)+1
+  is <- 50*i
+  idt <- ind[ii:is]
+  dtrain <- datos[-idt,]
+  dtest <- datos[idt,]
+  lr.fit <- svm(recid~., data=dtrain, cost=1000, gamma=1, probability=TRUE)
+  pred <- predict(lr.fit,dtest,probability=TRUE)
+  lr.pred <- attr(pred, which="probabilities")[,"SI"]
+  acc[i]<-auc((dtest$recid=="SI")*1, lr.pred)
+}
+mejorClasificador[j]<- mean(acc)
+j<-j+1
+#LR
+for(i in 1:10) { 
+  ii <- 50*(i-1)+1
+  is <- 50*i
+  idt <- ind[ii:is]
+   dtrain <- datos[-idt,]
+   dtest <- datos[idt,]
+   lr.fit <- glm(recid~., data=dtrain, family=binomial("logit"))
+   lr.pred <- predict(lr.fit,dtest,type="response")  
+   acc[i]<-auc((dtest$recid=="SI")*1,lr.pred)
+}
+mejorClasificador[j]<- mean(acc)
+bettercla<-max(mejorClasificador);
+for(i in 1:4) {
+  if (mejorClasificador[i]==bettercla){           
+    clasificador=i
+  } 
+}
+@
+La mejor precision es $\Sexpr{bettercla}$ obtenida por el clasificador numero $\Sexpr{clasificador}$ que es el que usariamos para realizar las predicciones.
+\end{document}
